@@ -393,6 +393,13 @@ data class AppSettings(
     val floatingAutomationBarOpacityPercent: Int = 92,
     val floatingAutomationBarHideOnLockscreen: Boolean = true,
     val floatingAutomationBarHideInGameMode: Boolean = true,
+    /** Legacy installs stay on the original list until explicitly switched. */
+    val floatingAutomationBarDisplayMode: String = "list",
+    /** New radial menu defaults: two rings with six sectors each. */
+    val floatingAutomationBarRingCount: Int = 2,
+    /** Zero-based ring * 6 + sector -> stable saved action ID. */
+    val floatingAutomationBarRingActionIds: Map<Int, Int> = emptyMap(),
+    val floatingAutomationBarRingHaptics: Boolean = true,
     val logToFile: Boolean = false,
 ) {
     /** New installs explicitly select two tiles. Legacy installs keep twelve. */
