@@ -42,6 +42,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.SearchBar
 import androidx.compose.material3.SearchBarDefaults
 import com.edgeflow.ui.i18n.Text
@@ -73,6 +74,7 @@ import com.edgeflow.core.Gesture
 import com.edgeflow.core.HardwareKey
 import com.edgeflow.core.KeyGesture
 import com.edgeflow.core.model.Action
+import com.edgeflow.core.model.GesturePlacement
 import com.edgeflow.core.model.Condition
 import com.edgeflow.core.model.AdjustStream
 import com.edgeflow.core.model.EditTextCommand
@@ -592,6 +594,18 @@ private fun ActionConfigurationDialog(
     var recordedGestureId by rememberSaveable(actionId, editKey) {
         mutableStateOf((existingAction as? Action.ReplayGesture)?.recordingId.orEmpty())
     }
+    var recordedGestureSpeed by rememberSaveable(actionId, editKey) {
+        mutableIntStateOf((existingAction as? Action.ReplayGesture)?.speedPercent ?: 100)
+    }
+    var recordedGesturePlacement by rememberSaveable(actionId, editKey) {
+        mutableStateOf((existingAction as? Action.ReplayGesture)?.placement ?: GesturePlacement.ORIGINAL)
+    }
+    var gestureAnchorX by rememberSaveable(actionId, editKey) {
+        mutableIntStateOf((existingAction as? Action.ReplayGesture)?.anchorXPercent ?: 50)
+    }
+    var gestureAnchorY by rememberSaveable(actionId, editKey) {
+        mutableIntStateOf((existingAction as? Action.ReplayGesture)?.anchorYPercent ?: 50)
+    }
     val sequenceActions = remember(actionId, existingAction) {
         mutableStateListOf<Action>().also {
             it.addAll(when (existingAction) {
@@ -832,7 +846,13 @@ private fun ActionConfigurationDialog(
         ActionId.INJECT_GESTURE -> {
             if (recordedGestureId.isNotBlank()) {
                 if (config.recordedGestures.any { it.id == recordedGestureId }) {
-                    Action.ReplayGesture(recordedGestureId)
+                    Action.ReplayGesture(
+                        recordedGestureId,
+                        speedPercent = recordedGestureSpeed,
+                        placement = recordedGesturePlacement,
+                        anchorXPercent = gestureAnchorX,
+                        anchorYPercent = gestureAnchorY,
+                    )
                 } else null
             } else {
                 val x = firstValue.toIntOrNull()
@@ -1052,6 +1072,36 @@ private fun ActionConfigurationDialog(
                         }
                         if (recordedGestureId.isNotBlank()) {
                             TextButton(onClick = { recordedGestureId = "" }) { Text("Use manual tap") }
+                            Text("Playback speed: ${recordedGestureSpeed}%")
+                            Slider(
+                                value = recordedGestureSpeed.toFloat(),
+                                onValueChange = {
+                                    recordedGestureSpeed = (it / 25f).toInt().coerceIn(2, 8) * 25
+                                },
+                                valueRange = 50f..200f,
+                                steps = 5,
+                            )
+                            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                                GesturePlacement.entries.forEach { placement ->
+                                    FilterChip(
+                                        selected = recordedGesturePlacement == placement,
+                                        onClick = { recordedGesturePlacement = placement },
+                                        label = { Text(when (placement) {
+                                            GesturePlacement.ORIGINAL -> "Original position"
+                                            GesturePlacement.CENTER -> "Center on screen"
+                                            GesturePlacement.CUSTOM -> "Custom anchor"
+                                        }) },
+                                    )
+                                }
+                            }
+                            if (recordedGesturePlacement == GesturePlacement.CUSTOM) {
+                                Text("Anchor X: ${gestureAnchorX}%")
+                                Slider(gestureAnchorX.toFloat(), { gestureAnchorX = it.toInt() },
+                                    valueRange = 0f..100f)
+                                Text("Anchor Y: ${gestureAnchorY}%")
+                                Slider(gestureAnchorY.toFloat(), { gestureAnchorY = it.toInt() },
+                                    valueRange = 0f..100f)
+                            }
                         } else {
                             ConfigField(firstValue, { firstValue = it }, "X coordinate", numeric = true)
                             ConfigField(secondValue, { secondValue = it }, "Y coordinate", numeric = true)

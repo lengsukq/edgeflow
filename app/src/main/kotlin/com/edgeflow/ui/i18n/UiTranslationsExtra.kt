@@ -52,6 +52,50 @@ internal object UiTranslationsExtra {
         "Import, export, recovery, emergency stop and reset" to
             "配置导入导出、恢复、紧急停止和重置",
         "Close floating widget" to "关闭悬浮小组件",
+        "Record new gesture" to "录制新手势",
+        "Gesture" to "手势",
+        "Draw one or two fingers across the overlay, with up to 12 consecutive strokes." to
+            "在录制浮层上使用单指或双指，可连续录制最多 12 段手势。",
+        "Gesture preview" to "手势预览",
+        "Gesture name" to "手势名称",
+        "Preview motion" to "动态预览",
+        "Original position" to "原始位置",
+        "Center on screen" to "屏幕居中",
+        "Custom anchor" to "自定义锚点",
+        "Stroke editor" to "轨迹编辑",
+        "Remove" to "删除",
+        "Save name" to "保存名称",
+        "Delete gesture" to "删除录制",
+        "Delete this gesture?" to "确认删除该录制？",
+        "This recording will be permanently deleted. Automations that reference it are protected." to
+            "此录制将永久删除。被自动化任务引用的录制会受到保护。",
+        "Test on device" to "真机测试",
+        "Record another gesture" to "重新录制新手势",
+        "Move selected stroke by 2%" to "以屏幕宽高的 2% 移动当前轨迹",
+        "Draw a gesture · 0/20 s" to "请绘制手势 · 0/20 秒",
+        "Screen rotated during recording. Clear and retry." to
+            "录制过程中屏幕方向发生变化，请清空并重新录制。",
+        "Legacy recording" to "旧版录制",
+        "Rotation-aware" to "自适应屏幕方向",
+        "Confirm device playback" to "确认真机回放",
+        "Start countdown" to "开始倒计时",
+        "EdgeFlow will inject the saved gesture in 5 seconds. Switch to your intended app now. Dispatch acceptance does not guarantee the app responds." to
+            "5 秒后将真实发送触摸操作，请切换至目标应用。系统接受注入并不代表目标应用已实际响应。",
+        "Device test injects real touches after a 5-second countdown. Switch to the target app. Use Emergency stop if needed." to
+            "真机测试会在 5 秒后真实模拟触摸。请先切换到目标应用；必要时使用紧急停止。",
+        "Clear" to "清空",
+        "Save gesture" to "保存手势",
+        "Gesture saved. Bind it via Inject Gesture." to "手势已保存，可通过“注入手势”动作绑定。",
+        "Gesture test in 5 seconds. Switch to your target app." to
+            "手势将在 5 秒后真机执行，请切换到目标应用。",
+        "Gesture must finish within 20 seconds (max 2 fingers)" to "录制必须在 20 秒内完成，最多同时使用双指。",
+        "Finish at least one stroke before saving (maximum 20 seconds, two fingers)." to
+            "请先录制至少一段完整轨迹（最多 20 秒，双指）。",
+        "Maximum of 12 strokes reached." to "已达到最多 12 段轨迹。",
+        "Maximum two fingers and 12 strokes." to "最多同时使用双指、连续 12 段。",
+        "Recording exceeded 20 seconds. Clear and retry." to "录制超过 20 秒，请清空后重试。",
+        "Gesture stroke has too few points." to "轨迹采样点不足，请重新录制。",
+        "Recording was interrupted; clear and retry." to "录制被中断，请清空后重试。",
         "No installed launchable apps are available." to "没有可启动的应用。",
         "No launchable apps are available." to "没有可启动的应用。",
         "No custom panels yet." to "暂无自定义面板。",
@@ -170,6 +214,21 @@ internal object UiTranslationsExtra {
     fun exact(value: String): String? = labels[value]
 
     fun dynamic(value: String): String? {
+        Regex("^Recorded (\\d+) strokes · (\\d+)/20 s$").matchEntire(value)?.let {
+            return "已录制 ${it.groupValues[1]} 段 · ${it.groupValues[2]}/20 秒"
+        }
+        Regex("^Playback speed: (\\d+)%$").matchEntire(value)?.let {
+            return "回放速度：${it.groupValues[1]}%"
+        }
+        Regex("^Anchor ([XY]): (\\d+)%$").matchEntire(value)?.let {
+            return "锚点 ${it.groupValues[1]}：${it.groupValues[2]}%"
+        }
+        Regex("^(\\d+) strokes · (\\d+) ms · (Legacy recording|Rotation-aware)$").matchEntire(value)?.let {
+            return "${it.groupValues[1]} 段手势 · ${it.groupValues[2]} 毫秒 · ${UiTranslations.chinese(it.groupValues[3])}"
+        }
+        Regex("^Stroke (\\d+) · (\\d+) points$").matchEntire(value)?.let {
+            return "第 ${it.groupValues[1]} 段 · ${it.groupValues[2]} 个采样点"
+        }
         Regex("^Ignore (left|right|top|bottom) edge$", RegexOption.IGNORE_CASE)
             .matchEntire(value)?.let {
                 val edge = when (it.groupValues[1].lowercase()) {

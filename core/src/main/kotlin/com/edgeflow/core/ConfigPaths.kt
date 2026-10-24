@@ -71,6 +71,12 @@ object Ipc {
     const val EXTRA_WIDGET_TIMEOUT_SECONDS = "widget_timeout_seconds"
     const val EXTRA_WIDGET_REMEMBER_POSITION = "widget_remember_position"
     const val EXTRA_TRIGGER = "trigger"
+    /** Request a saved-recording test from the app UID, not an untrusted caller. */
+    const val EXTRA_GESTURE_TEST_ID = "gesture_test_id"
+    const val EXTRA_GESTURE_TEST_SPEED = "gesture_test_speed"
+    const val EXTRA_GESTURE_TEST_PLACEMENT = "gesture_test_placement"
+    const val EXTRA_GESTURE_ANCHOR_X = "gesture_anchor_x"
+    const val EXTRA_GESTURE_ANCHOR_Y = "gesture_anchor_y"
 
     const val APP_PACKAGE = "com.edgeflow"
     const val SYSTEM_PACKAGE = "android"

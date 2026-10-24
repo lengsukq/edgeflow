@@ -46,6 +46,8 @@ import com.edgeflow.core.model.AppSettings
 import com.edgeflow.core.GameModePolicy
 import com.edgeflow.core.Ipc
 import com.edgeflow.core.GestureReferences
+import com.edgeflow.core.GestureTracePolicy
+import com.edgeflow.core.model.GesturePlacement
 import com.edgeflow.core.model.EdgeConfig
 import com.edgeflow.data.ConfigRepository
 import com.edgeflow.service.OverlayHostService
@@ -89,6 +91,7 @@ fun SettingsScreen(configRepository: ConfigRepository) {
         category = SettingsCategory.OVERVIEW
     }
     var showResetDialog by remember { mutableStateOf(false) }
+    var selectedRecordingId by remember { mutableStateOf<String?>(null) }
     val settings = config.settings
     val context = LocalContext.current
     var overlayAllowed by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
@@ -271,6 +274,24 @@ fun SettingsScreen(configRepository: ConfigRepository) {
                     title = "Recorded gestures",
                     subtitle = "Use the Gesture record action to capture a stroke. Bind one with Inject Gesture. Recordings currently used by any action are protected from deletion.",
                 ) {
+                    SettingRow(
+                        title = "Record new gesture",
+                        subtitle = "Draw one or two fingers across the overlay, with up to 12 consecutive strokes.",
+                        onClick = {
+                            if (Settings.canDrawOverlays(context)) {
+                                context.startForegroundService(
+                                    Intent(context, OverlayHostService::class.java)
+                                        .setAction(Ipc.SHOW_OVERLAY)
+                                        .putExtra(Ipc.EXTRA_OVERLAY_KIND, Ipc.KIND_GESTURE_RECORD),
+                                )
+                            } else {
+                                overlayPermissionLauncher.launch(Intent(
+                                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                    Uri.parse("package:${context.packageName}"),
+                                ))
+                            }
+                        },
+                    )
                     if (config.recordedGestures.isEmpty()) {
                         Text("No recorded gestures")
                     }
@@ -281,15 +302,7 @@ fun SettingsScreen(configRepository: ConfigRepository) {
                             subtitle = "${record.points.size} points · " +
                                 "${record.points.lastOrNull()?.elapsedMs ?: 0} ms · " +
                                 if (record.id in used) "In use · protected" else "Tap to delete",
-                            onClick = {
-                                if (record.id !in used) {
-                                    configRepository.update { state ->
-                                        if (record.id in GestureReferences.usedIds(state)) state
-                                        else state.copy(recordedGestures =
-                                            state.recordedGestures.filterNot { it.id == record.id })
-                                    }
-                                }
-                            },
+                            onClick = { selectedRecordingId = record.id },
                         )
                     }
                 }
@@ -532,6 +545,72 @@ fun SettingsScreen(configRepository: ConfigRepository) {
             }
             }
         }
+    }
+
+    selectedRecordingId?.let { id ->
+        config.recordedGestures.firstOrNull { it.id == id }?.let { selected ->
+            GestureRecordingDetailDialog(
+                record = selected,
+                onDismiss = { selectedRecordingId = null },
+                canDelete = id !in GestureReferences.usedIds(config),
+                onRename = { value ->
+                    configRepository.update { state ->
+                        state.copy(recordedGestures = state.recordedGestures.map {
+                            if (it.id == id) it.copy(name = value) else it
+                        })
+                    }
+                },
+                onRemoveStroke = { index ->
+                    configRepository.update { state ->
+                        state.copy(recordedGestures = state.recordedGestures.map { current ->
+                            if (current.id != id) return@map current
+                            GestureTracePolicy.withoutStroke(current, index)
+                        })
+                    }
+                },
+                onMoveStroke = { index, dx, dy ->
+                    configRepository.update { state ->
+                        state.copy(recordedGestures = state.recordedGestures.map { current ->
+                            if (current.id == id) GestureTracePolicy.moveStroke(current, index, dx, dy)
+                            else current
+                        })
+                    }
+                },
+                onDelete = {
+                    configRepository.update { state ->
+                        if (id in GestureReferences.usedIds(state)) state
+                        else state.copy(recordedGestures =
+                            state.recordedGestures.filterNot { it.id == id })
+                    }
+                    selectedRecordingId = null
+                },
+                onRecordAnother = {
+                    if (Settings.canDrawOverlays(context)) {
+                        context.startForegroundService(
+                            Intent(context, OverlayHostService::class.java)
+                                .setAction(Ipc.SHOW_OVERLAY)
+                                .putExtra(Ipc.EXTRA_OVERLAY_KIND, Ipc.KIND_GESTURE_RECORD),
+                        )
+                    }
+                },
+                onTest = { speed, placement, anchorX, anchorY ->
+                    android.widget.Toast.makeText(context,
+                        UiTranslations.forContext(context,
+                            "Gesture test in 5 seconds. Switch to your target app."),
+                        android.widget.Toast.LENGTH_LONG).show()
+                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                        context.sendBroadcast(
+                            Intent(Ipc.PERFORM_ACTION).setPackage(Ipc.SYSTEM_PACKAGE)
+                                .putExtra(Ipc.EXTRA_GESTURE_TEST_ID, id)
+                                .putExtra(Ipc.EXTRA_GESTURE_TEST_SPEED, speed)
+                                .putExtra(Ipc.EXTRA_GESTURE_TEST_PLACEMENT, placement.name)
+                                .putExtra(Ipc.EXTRA_GESTURE_ANCHOR_X, anchorX)
+                                .putExtra(Ipc.EXTRA_GESTURE_ANCHOR_Y, anchorY),
+                        )
+                    }, 5000L)
+                },
+            )
+        } ?: run { selectedRecordingId = null }
     }
 
     if (showResetDialog) {

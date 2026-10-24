@@ -323,6 +323,32 @@ internal class SystemStateObserver(
     }
 
     private fun handleActionRequest(intent: Intent) {
+        // The enclosing receiver has already verified the sending app UID.
+        // Test playback resolves only an existing saved recording: raw injected
+        // coordinates or serialized privileged actions are never accepted.
+        if (intent.hasExtra(Ipc.EXTRA_GESTURE_TEST_ID)) {
+            val recordingId = intent.getStringExtra(Ipc.EXTRA_GESTURE_TEST_ID) ?: return
+            if (repository.config.recordedGestures.none { it.id == recordingId }) return
+            val speed = intent.getIntExtra(Ipc.EXTRA_GESTURE_TEST_SPEED, 100)
+            if (speed !in com.edgeflow.core.GesturePlaybackPlan.MIN_SPEED..
+                com.edgeflow.core.GesturePlaybackPlan.MAX_SPEED) return
+            val placement = runCatching {
+                com.edgeflow.core.model.GesturePlacement.valueOf(
+                    intent.getStringExtra(Ipc.EXTRA_GESTURE_TEST_PLACEMENT) ?: "ORIGINAL",
+                )
+            }.getOrNull() ?: return
+            val anchorX = intent.getIntExtra(Ipc.EXTRA_GESTURE_ANCHOR_X, 50)
+            val anchorY = intent.getIntExtra(Ipc.EXTRA_GESTURE_ANCHOR_Y, 50)
+            if (anchorX !in 0..100 || anchorY !in 0..100) return
+            executor.run(
+                com.edgeflow.core.model.Action.ReplayGesture(
+                    recordingId, speedPercent = speed, placement = placement,
+                    anchorXPercent = anchorX, anchorYPercent = anchorY,
+                ),
+                "gesture test",
+            )
+            return
+        }
         val action = if (intent.hasExtra(Ipc.EXTRA_TRIGGER)) {
             val triggerId = intent.getIntExtra(Ipc.EXTRA_TRIGGER, -1)
             repository.config.stateTriggers[triggerId]
