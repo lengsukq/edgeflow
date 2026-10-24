@@ -39,6 +39,7 @@ internal class FloatingAutomationBar(
     }
 
     fun resetPosition() {
+        radial?.resetPosition()
         y = screenHeight / 3
         onRight = true
         prefs.edit().remove("y").remove("right").apply()
@@ -57,6 +58,7 @@ internal class FloatingAutomationBar(
     private var attached = false
     private var expanded = false
     private var entries = emptyList<NamedAction>()
+    private var radial: FloatingRadialMenu? = null
     private var onRight = prefs.getBoolean("right", true)
     private var y = prefs.getInt("y", -1)
 
@@ -64,7 +66,22 @@ internal class FloatingAutomationBar(
     private val screenHeight get() = context.resources.displayMetrics.heightPixels
     private val estimatedHeight get() = dp(52 + if (expanded) 46 * maxOf(1, entries.size) else 0)
 
-    fun show(actions: List<NamedAction>, settings: AppSettings) {
+    fun show(actions: List<NamedAction>, settings: AppSettings, ringSlots: List<NamedAction?> = emptyList()) {
+        if (settings.floatingAutomationBarDisplayMode == "radial") {
+            if (attached) {
+                runCatching { manager.removeView(root) }
+                attached = false
+            }
+            val menu = radial ?: FloatingRadialMenu(context, manager, trigger).also { radial = it }
+            menu.show(ringSlots, settings)
+            return
+        }
+        if (radial != null) {
+            radial?.close()
+            radial = null
+            onRight = prefs.getBoolean("right", true)
+            y = prefs.getInt("y", -1)
+        }
         sizePercent = settings.floatingAutomationBarSizePercent.coerceIn(70, 150)
         root.alpha = settings.floatingAutomationBarOpacityPercent.coerceIn(40, 100) / 100f
         entries = actions.take(5)
@@ -81,6 +98,8 @@ internal class FloatingAutomationBar(
     }
 
     fun close() {
+        radial?.close()
+        radial = null
         if (attached) runCatching { manager.removeView(root) }
         attached = false
     }

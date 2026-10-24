@@ -135,7 +135,11 @@ class OverlayHostService : Service() {
                     .putExtra(Ipc.EXTRA_SLOT, taskId),
             )
         }.also { automationBar = it }
-        bar.show(FloatingAutomationBarPolicy.selected(current), setting)
+        bar.show(
+            FloatingAutomationBarPolicy.selected(current),
+            setting,
+            FloatingAutomationBarPolicy.ringSlots(current),
+        )
     }
 
     private fun showGestureRecorder() {
