@@ -1,155 +1,262 @@
 # EdgeFlow
 
-**EdgeFlow** 是面向个人 Root / LSPosed Android 设备的自动化工具与悬浮快捷栏。
-项目代码以 **[MIT License](LICENSE)** 开源，目前仍处于 Beta 阶段。
+**简体中文** | [English](README_EN.md)
 
-EdgeFlow is an independent automation and floating-shortcut toolkit for
-rooted Android devices using LSPosed, distributed under the
-**[MIT License](LICENSE)**. It is currently in Beta development.
+> 面向个人 Root / LSPosed Android 设备的本地自动化工具与悬浮快捷入口。
+>
+> **当前状态：Beta 开发中。** 功能是否稳定取决于 Android 版本、LSPosed 环境与设备厂商。编译成功不等于所有系统 Hook、触摸注入与手势都已经通过真机验证。
 
-## 功能 / Features
+EdgeFlow 希望用尽可能少的设置，把**自动化任务、手势触发、常驻悬浮球和系统快捷操作**组合在一起，适合喜欢自定义手机操作方式的个人用户。
 
-- **自动化任务**：组合打开应用、延迟、点击、手势、按键、文字输入、条件分支与重复动作；支持执行历史及安全停止。
-- **悬浮快捷栏**：拖动、吸边、展开与收起；可绑定最多五个保存任务，并设置透明度、尺寸及锁屏/游戏模式隐藏。
-- **快速触发**：边缘手势、实体按键、定时/系统/应用事件及最多十二个快捷设置磁贴。
-- **安全解锁**：遵循 Android 正常身份认证流程，不绕过 PIN、密码或生物识别；续行需用户确认。
-- **安全与本地化**：JSON 备份/恢复/迁移、运行诊断、简体中文和英文界面。
+项目按 [MIT 开源协议](LICENSE)发布；不提供绕过 Android 安全认证的功能，也不定位为企业设备管理平台。
 
-功能仍需在不同 Android 设备上验收；构建通过不代表系统 Hook 或输入注入已在所有机型上有效。
-The project is still under active development. Features and Android
-compatibility may vary by device.
+## 目录
 
-## Requirements
+- [核心功能](#核心功能)
+- [运行条件与兼容性](#运行条件与兼容性)
+- [安装与激活](#安装与激活)
+- [快速上手](#快速上手)
+- [悬浮球与同心圆环菜单](#悬浮球与同心圆环菜单)
+- [权限隐私与安全](#权限隐私与安全)
+- [项目架构](#项目架构)
+- [开发构建与测试](#开发构建与测试)
+- [常见问题](#常见问题)
+- [开发进度与规划](#开发进度与规划)
+- [参与贡献与协议](#参与贡献与协议)
 
-| | |
-|---|---|
-| Android | 9 (API 28) through 17 (intended; not all device-validated) |
-| Framework | LSPosed supporting libxposed API 102 |
-| Scope | **System Framework** (`system`) |
-| Root | Required for LSPosed itself; not required for gestures once installed |
+## 核心功能
 
-A reboot is required after enabling the module or changing its scope, because the system
-server has already started by then. Android 9–17 is the intended compatibility range, not a
-certified support matrix; hook and privileged-service behaviour still requires device tests.
+| 功能 | 能做什么 | 注意事项 |
+| --- | --- | --- |
+| **自动化任务** | 保存并组合启动应用、等待、点击、滑动、输入文本、条件、有限循环、录制回放及停止控制 | 部分操作需要系统 Hook 或输入权限；不同设备表现可能不同 |
+| **常驻悬浮快捷栏** | 小手柄拖动、吸附屏幕边缘、展开/收起、位置记忆、尺寸/透明度及任务绑定 | 默认关闭；需要 Android 悬浮窗权限 |
+| **同心圆环悬浮球** | 默认 **2 层 × 每层 6 扇区 = 12 个槽位**；可切换为 3 层 18 槽位；弹性展开、滑动高亮、松手执行、触觉反馈 | 每个扇区绑定一个已保存的自动化任务；保留原列表模式 |
+| **快速触发** | 边缘手势、选定的硬件按键、定时、屏幕/应用事件、快捷设置磁贴 | 取决于系统版本、作用域、启用状态和权限 |
+| **Game Mode 游戏模式** | 按需阻止边缘或按键误触，支持设置悬浮快捷栏在游戏模式中隐藏 | 默认不应吞掉未绑定的系统操作 |
+| **配置与诊断** | JSON 配置备份/导入/恢复、运行状态、执行记录、异常信息和紧急停止 | 升级必须保留既有任务、绑定和恢复路径 |
+| **界面语言** | 简体中文与英文 | 部分功能持续调整中，欢迎反馈遗漏的翻译 |
 
-## Implementation status
+### 设计原则
 
-The app includes a task editor, execution diagnostics and history, scheduling,
-configuration recovery and an opt-in persistent floating shortcut bar.
-Some older actions remain available for backward compatibility but are hidden
-from the new-action picker. Device-specific system hooks and injection still
-require physical Android testing.
+- **个人使用优先**：聚焦常用操作，不堆砌企业级远程管控功能。
+- **默认少打扰**：悬浮球、系统手势等需要用户主动启用。
+- **复用一个动作执行通道**：快捷栏、圆环、手势和磁贴调用同一套任务与动作模型。
+- **尽量保留老设置**：新增功能不随意修改旧动作 ID，不清空保存过的任务。
+- **失败可恢复**：系统级功能优先保证可关闭、可停止、可导出备份。
 
-## Modules
+## 运行条件与兼容性
 
+| 项目 | 要求 |
+| --- | --- |
+| Android | 最低 Android 9（API 28）；Android 9–17 为**目标范围**，不代表每个系统版本均已实机认证 |
+| Root 与框架 | 可正常运行、满足模块 API 要求的 LSPosed 环境 |
+| 模块作用域 | **系统框架（System Framework / `system`）** |
+| 悬浮球权限 | Android 系统的「显示在其他应用上层 / 悬浮窗」权限 |
+| 从源码构建 | **JDK 17**、带 API 37 编译平台的 Android SDK、可用的 Gradle/Android 工具链 |
+
+**特别注意：** App 能打开、框架有显示，并不代表目标 Hook 一定成功。尤其是按键拦截和输入注入，应以真机实际动作是否执行作为验收依据。
+
+## 安装与激活
+
+1. 自行编译或从可信来源获取 EdgeFlow APK，安装并启动 App。
+2. 打开 LSPosed，找到 EdgeFlow 并**启用模块**。
+3. 在模块作用域中选择 **系统框架（System Framework）**，不必为了试用而随意勾选其他应用。
+4. **重启手机**。作用域变化通常要在系统进程重新启动后生效。
+5. 返回 EdgeFlow 查看状态与诊断，先绑定一个不会产生副作用的测试动作。
+6. 需要悬浮球时，再在系统设置里授予「在其他应用上层显示」权限。
+7. 在 EdgeFlow 中主动开启悬浮栏、边缘手势或其他需要的功能，逐项测试。
+
+### 无法激活怎么办？
+
+先核对 **模块是否启用、系统框架是否勾选、重启是否完成**，然后查看 LSPosed 和 EdgeFlow 的日志。不建议仅凭「待确认」提示无限重装、反复勾选所有作用域。某些系统版本可能需要单独适配。
+
+## 快速上手
+
+### 1. 创建一条自动化
+
+1. 进入 **「自动化」**，新建任务并命名。
+2. 添加动作，例如：**打开应用 → 等待 → 点击 → 返回**。
+3. 设置必要的等待时间、条件和失败处理；不要为敏感应用预设盲目点击。
+4. 在配置页先手动试运行，确认执行结果、顺序和停止功能。
+5. 将这个保存的任务绑定到悬浮栏、圆环扇区或其他触发方式。
+
+### 2. 绑定触发方式
+
+可以选择边缘手势、按键、定时、系统事件或快捷设置磁贴。注意 Android 的「返回」手势、通知栏下拉、游戏输入等潜在冲突；Game Mode 和锁屏安全策略优先。
+
+### 3. 出问题如何恢复？
+
+进入设置停止正在运行的任务，临时关闭手势或悬浮层；必要时先禁用 LSPosed 模块、重新启动设备，再从旧配置备份恢复。不要在无法确认安全的环境中测试连续点击。
+
+## 悬浮球与同心圆环菜单
+
+同一个常驻悬浮快捷栏支持 **列表模式**与 **同心圆环模式**。**旧用户保持原列表布局**，只有主动切换后才启用圆环。
+
+### 开启与配置
+
+1. 进入 App 的 **「悬浮栏 / Floating shortcuts」** 页面。
+2. 开启 **「启用悬浮快捷栏」**，如提示权限不足，按照 Android 系统提示授权。
+3. 打开 **「同心圆环布局」**；关闭这个开关即可返回旧列表模式。
+4. 默认使用 **双层圆环，每层 6 个扇区**。可按需要开启 **三层圆环**。
+5. 点击 **第一层 / 第二层 → 扇区 1–6**，选择已保存的任务；也可以清空单个扇区。
+6. 在同一页面实时查看圆环预览，调整悬浮球尺寸（默认 **100%**）、透明度、吸边位置。
+7. **扇区触觉反馈默认开启**，滑至已绑定扇区时提供轻微振动。
+
+### 操作手势
+
+| 手势 | 结果 |
+| --- | --- |
+| **轻点**收起状态的悬浮球 | 弹性展开同心圆环 |
+| **长按并滑动**悬浮球 | 连续滑动选区，不需要反复点开 |
+| 手指经过任一扇区 | 扇区高亮，已绑定任务可触发轻微振动 |
+| 在**已绑定**扇区松开 | 通过现有动作执行器执行任务，然后关闭菜单 |
+| 滑回中心、环间空隙或外侧松开 | **取消，不执行任何任务** |
+| 点击外部或取消手势 | 收起菜单 |
+| 拖动**收起状态**的悬浮球 | 改变位置并记住左右吸附边和纵向高度 |
+
+展开动画使用弹性过渡，圆环依次浮现；收起时有简短渐隐与收缩过渡。默认展示简洁的任务文字标签，避免在狭小屏幕上堆砌复杂的系统面板。
+
+### 老版本设置会丢失吗？
+
+**不会因切换模式而主动删除。** 原列表中的最多 5 个快捷任务、旧 Pie 配置、保存的动作和任务都保留。新圆环使用独立的稳定任务 ID 映射；尚未配置的槽位可以继承原列表快捷任务。若明确清空某个槽位，该位置不会再自动继承。
+
+### 当前限制
+
+圆环及其设置已通过本地编译与 JVM 单测，但**完整的手指滑动精度、横竖屏切换、系统返回手势、不同厂商窗口限制与所有锁屏场景仍需真机验收**。悬浮层默认会按照已存在的设置在锁屏或 Game Mode 时隐藏。
+
+## 权限隐私与安全
+
+- **数据以本地为主**：任务与设置保存在设备本地，并通过 App 的功能导出和恢复。备份可能包含任务参数，请勿公开分享含隐私的配置。
+- **系统级权限**：Root / LSPosed 修改的是 Android 运行环境，受 ROM、系统更新和第三方框架影响。应保留能禁用模块的恢复途径。
+- **安全锁屏不绕过**：唤醒屏幕不等于解锁；PIN、密码、图案、生物识别等仍由 Android 完成认证。
+- **悬浮窗只在需要时启用**：悬浮球权限应由用户主动授权。若遮挡支付、密码输入或系统导航，应关闭或调整显示策略。
+- **系统手势优先**：未匹配的边缘/按键事件应尽可能正常透传，不能为了快捷菜单而破坏系统操作。
+- **紧急停止与可回滚**：遇到失控的自动化、异常输入或 Hook 故障时应优先停止任务、关闭触发器并恢复备份。
+
+## 项目架构
+
+```text
+EdgeFlow/
+├── app/
+│   └── src/main/kotlin/com/edgeflow/
+│       ├── hook/           # 系统 Hook、动作执行与输入处理
+│       ├── service/        # OverlayHostService、快捷栏、同心圆环悬浮球
+│       ├── data/           # 配置仓库和同步
+│       └── ui/             # Jetpack Compose UI、多语言界面
+├── core/
+│   └── src/main/kotlin/com/edgeflow/core/
+│       ├── model/          # 持久化配置与动作模型
+│       └── ...             # 纯逻辑策略、圆环几何计算
+├── docs/                   # 定位、开发计划、Beta 验收资料
+├── README.md               # 中文首页
+├── README_EN.md            # English documentation
+└── LICENSE                 # MIT License
 ```
-core/   Pure Kotlin. Action and condition model, id catalogue, serialisation schema.
-        No Android dependencies, so the schema can be unit-tested on the JVM.
-app/    The module app and the injected code, in one APK.
-        hook/    Runs inside system_server.
-        data/    Configuration store and status detection.
-        ui/      Compose UI.
-        service/ Notification listener, boot receiver and overlay-host service.
-```
 
-The two are split so the persisted format — the contract between the app and the injected
-code — lives in a module with no Android surface.
+**模块分工：** `core` 管理序列化模型、任务 ID 和可独立单测的策略；`app` 负责界面、服务以及需要 LSPosed 的系统 Hook。这样输入线程不需要依赖 Compose UI，新圆环也无需重复实现任务执行器。
 
-## How it works
+关键代码：
 
-### Input interception
+| 文件 | 作用 |
+| --- | --- |
+| `app/.../service/FloatingAutomationBar.kt` | 常驻快捷栏和模式切换 |
+| `app/.../service/FloatingRadialMenu.kt` | 悬浮球、展开/收起动画、圆环触摸交互 |
+| `app/.../service/OverlayHostService.kt` | Android 悬浮窗及服务生命周期 |
+| `app/.../ui/FloatingAutomationBarCard.kt` | 悬浮菜单设置、槽位绑定及预览 |
+| `core/.../RadialMenuGeometry.kt` | 圆环扇区命中计算，可单测 |
 
-Everything hinges on `InputManagerService.filterInputEvent(InputEvent, int)`. The native
-input dispatcher calls it for every key and motion event, and its return value is inverted
-from what the name suggests: the Java method returns *whether dispatch should continue*, so
-`false` means the filter consumed the event.
+## 开发构建与测试
 
-The method body forwards to a Binder `IInputFilter` that a module cannot install, so the
-hook answers directly and the original body never runs. Two further hooks make the
-dispatcher call it at all:
+准备 JDK 17 与 Android SDK（需要 compile SDK 37）。在本机设置 `JAVA_HOME`，并通过不提交到 Git 的 `local.properties` 配置 SDK 路径。
 
-- `NativeInputManagerService$NativeImpl.setInputFilterEnabled(boolean)` is forced to `true`.
-- `InputManagerService.setInputFilter(IInputFilter)` is watched so clearing the filter
-  re-opens the native gate.
-
-These signatures are unchanged from Android 9 through 17.
-
-### Why gestures only consume what they match
-
-An edge strip that swallowed every touch would break the system back gesture and pull-down
-shade. The gesture engine therefore passes every event through until it has positively
-matched a binding, and only then consumes. The rule is enforced in one place,
-`GestureEngine`, and the resolver answers "is anything bound here?" before the engine
-commits to tracking a pointer.
-
-### Cross-process configuration
-
-The configuration is one JSON document in the module app's own preferences.
-The app synchronizes it to a separate LSPosed remote preferences store through
-the bound Xposed service, rather than sharing one Android preferences file.
-The schema lives in
-`core/model/EdgeConfig.kt`; `ConfigCodec` is the only serialiser.
-
-Reads happen on the input thread, so the parsed model is cached and re-parsed only when the
-stored string changes. A document that fails to parse is reported and the previous good
-configuration is kept — a bad edit must not silently disable the user's gestures.
-
-### Compatibility with changing framework internals
-
-Android moves the classes this module hooks. Rather than branch on version numbers, each
-hook resolves its target defensively and adapts:
-
-| Target | Handling |
-|---|---|
-| `PhoneWindowManager.interceptKeyBeforeDispatching` | Return type changed from `long` (API 36, `-1` means consumed) to `boolean` (API 37, `true` means consumed). The sentinel is derived from the declared return type, so no version check is needed. |
-| `InsetsSourceProvider.updateVisibility` | Resolved by name and arity, because its parameter list is not stable. |
-| `InputMethodManagerService.setImeWindowStatusLocked` | Same. |
-| `ActivityRecord.setState` | Resolved by name with an arity fallback. |
-
-A hook that cannot be installed disables one feature and logs why; it never aborts startup
-and never propagates an exception into the framework. An exception escaping a hook callback
-can take down the system server.
-
-## Action model
-
-Actions and conditions are sealed hierarchies serialised polymorphically on their integer
-id. That is what makes multi-actions, conditionals, repeats and sub-gestures nest
-arbitrarily without special cases: a `Sequence` holds `List<Action>`, and an `Action` may be
-another `Sequence`.
-
-Ids are part of the on-disk format and must never be reassigned. The catalogue in
-`ActionCatalog` carries the presentation metadata, kept out of the model so the injected
-code does not depend on UI concerns.
-
-## Building
+Linux / macOS：
 
 ```bash
-./gradlew :app:assembleDebug
+./gradlew :core:testDebugUnitTest :app:testDebugUnitTest :app:assembleDebug
 ```
 
-`local.properties` must point at an Android SDK with compile platform 37.
-JDK 17 is required.
+Windows PowerShell：
 
-The Debug APK is signed with the development key. Release is **unsigned
-unless you explicitly configure a private release keystore**; never distribute
-an unsigned or debug-signed APK as a production release.
-
-## Install
-
-1. Install the APK.
-2. Open LSPosed, enable EdgeFlow, and set its scope to **System Framework**.
-3. Reboot.
-4. Open EdgeFlow; the status card confirms the hooks are live.
-
-## Layout of this repository
-
-```
-app/            Module app and injected code
-core/           Shared model and schema
-LICENSE         MIT license
+```powershell
+.\gradlew.bat :core:testDebugUnitTest :app:testDebugUnitTest :app:assembleDebug
 ```
 
-## License / 开源协议
+Debug APK 通常位于：
 
-EdgeFlow 项目代码以 [MIT License](LICENSE) 发布。
-EdgeFlow source code is licensed under the [MIT License](LICENSE).
+```text
+app/build/outputs/apk/debug/app-debug.apk
+```
+
+安装到已授权的 Android 手机：
+
+```bash
+adb devices
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
+
+**签名注意：** Debug APK 采用调试签名。Release 需要单独配置私有签名文件与密钥；没有正确 Release 凭据时产物可能为**未签名 APK**，不能直接作为正式版本发布。请勿把密钥、密码、`local.properties` 或私人备份提交到 Git。不同签名的 APK 不能直接覆盖彼此，需自行处理数据备份与升级策略。
+
+## 常见问题
+
+<details>
+<summary><strong>模块已启用，但系统 Hook 仍显示待确认</strong></summary>
+
+确认 LSPosed 模块处于开启状态、作用域为 **System Framework**，并已在更改作用域后重启。再检查框架日志和 App 诊断。若输入手势仍然无效，先不要标记为支持该设备。
+
+</details>
+
+<details>
+<summary><strong>悬浮球没有出现</strong></summary>
+
+检查「悬浮快捷栏」是否开启、悬浮窗权限是否授予，以及当前是否处于锁屏、Game Mode 或厂商限制悬浮层的场景。可以在设置里重置手柄位置。
+
+</details>
+
+<details>
+<summary><strong>圆环可以展开，但滑动松手后没有执行</strong></summary>
+
+确认目标扇区已绑定**存在且未被删除的保存任务**，再在任务页面手动执行确认动作本身有效。没有绑定、滑入中心或空白区域都会取消执行。
+
+</details>
+
+<details>
+<summary><strong>Android 系统导航手势受到影响</strong></summary>
+
+临时关闭对应的 EdgeFlow 边缘手势或悬浮栏，检查绑定区域、冲突设置与日志。恢复系统原始输入行为优先于任何快捷动作。
+
+</details>
+
+<details>
+<summary><strong>Gradle 提示 Java 8 或 API 37 相关警告</strong></summary>
+
+Gradle 构建需要 **JDK 17**。API 37 的提示可能来自 Android Gradle Plugin 兼容性声明；应检查工具链版本，而不是直接把构建警告当作系统功能错误。
+
+</details>
+
+反馈问题时建议说明**手机型号、Android 版本、LSPosed 版本、复现步骤、预期结果及脱敏日志**，不要附带密码、Token 或个人内容。
+
+## 开发进度与规划
+
+截至当前开发版本：
+
+- 已实现可配置的双层圆环（默认 12 槽位），可扩展为三层 18 槽位。
+- 圆环新增弹性展开、渐隐收起、连续滑动选择、松手执行及触觉反馈。
+- 新旧悬浮模式使用同一套任务执行链，现有列表配置保留。
+- 几何单测、核心与 App 的 Debug 单测，以及 Debug APK 构建已通过。
+- **真机已经可以安装调试 APK，但不代表所有圆环手势和系统 Hook 通过了实机完整验收。**
+
+尚待完成或加强：多机型触控验收、横竖屏与小屏优化、辅助功能支持、长期性能测试、权限异常恢复、Beta 发布检查。
+
+详细文档：[产品定位与范围](docs/PRODUCT_SCOPE.md) · [下一阶段计划](docs/NEXT_PHASE_DEVELOPMENT_PLAN.md) · [Beta 发布检查表](docs/BETA_RELEASE_CHECKLIST.md)。
+
+历史功能清单仅用于兼容与回归参考，不代表未来会完整复刻所有旧功能。
+
+## 参与贡献与协议
+
+欢迎通过 Issue 或 Pull Request 反馈可复现的问题和改进建议；请提供充分的复现信息并避免上传设备隐私或任何私有凭据。
+
+本项目代码采用 **[MIT License](LICENSE)**。
+
+---
+
+[Read this document in English →](README_EN.md)
