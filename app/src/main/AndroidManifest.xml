@@ -1,0 +1,336 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- Reading the installed-app list is required to build the app picker,
+         the freezer list and the "app focused" condition. -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.flash" android:required="false" />
+    <uses-permission android:name="android.permission.FLASHLIGHT" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.REORDER_TASKS" />
+    <uses-permission android:name="android.permission.KILL_BACKGROUND_PROCESSES" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+
+    <application
+        android:name=".EdgeFlowApp"
+        android:localeConfig="@xml/locales_config"
+        android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:enableOnBackInvokedCallback="true"
+        android:theme="@style/Theme.EdgeFlow">
+
+        <activity
+            android:name=".ui.MainActivity"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:windowSoftInputMode="adjustResize"
+            android:theme="@style/Theme.EdgeFlow">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".ui.TextToolsActivity"
+            android:exported="false"
+            android:theme="@style/Theme.EdgeFlow" />
+        <activity
+            android:name=".ui.RegionCropActivity"
+            android:exported="false"
+            android:theme="@style/Theme.EdgeFlow" />
+
+        <activity
+            android:name=".ui.UnlockRequestActivity"
+            android:exported="false"
+            android:theme="@style/Theme.EdgeFlow"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true" />
+
+        <!-- Privileged system_server-only response to a read-only hook check.
+             The sender needs Android's signature DUMP permission. -->
+        <receiver
+            android:name=".service.ModuleStatusReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP">
+            <intent-filter>
+                <action android:name="com.edgeflow.action.MODULE_STATUS_REPLY" />
+            </intent-filter>
+        </receiver>
+        <receiver
+            android:name=".service.GameModeSyncReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP">
+            <intent-filter>
+                <action android:name="com.edgeflow.GAME_MODE_CHANGED" />
+            </intent-filter>
+        </receiver>
+        <!-- system_server-only execution history. Other apps cannot hold DUMP. -->
+        <receiver
+            android:name=".service.AutomationHistoryReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP">
+            <intent-filter>
+                <action android:name="com.edgeflow.AUTOMATION_HISTORY" />
+            </intent-filter>
+        </receiver>
+
+        <service
+            android:name=".service.EdgeAccessibilityService"
+            android:exported="true"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/edge_accessibility_service" />
+        </service>
+
+        <!-- Lets other components (and adb) fire a stored action by slot. -->
+        <activity
+            android:name=".ui.ActionLauncherActivity"
+            android:exported="true"
+            android:noHistory="true"
+            android:theme="@style/Theme.EdgeFlow.Transparent">
+            <intent-filter>
+                <action android:name="com.edgeflow.PERFORM_ACTION" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <!-- Remote preferences bridge used by the modern Xposed API. The
+             authority must be exactly "${applicationId}.XposedService": the
+             framework discovers the provider by that name to hand the module
+             app a binder, and it is the channel through which both sides read
+             and write the shared configuration. -->
+        <provider
+            android:name="io.github.libxposed.service.XposedProvider"
+            android:authorities="${applicationId}.XposedService"
+            android:exported="true"
+            android:enabled="true"
+            tools:ignore="ExportedContentProvider" />
+
+        <receiver
+            android:name=".service.BootReceiver"
+            android:exported="false"
+            android:enabled="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
+            android:name=".service.SpeechCommandReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP">
+            <intent-filter>
+                <action android:name="com.edgeflow.PERFORM_ACTION" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
+            android:name=".service.OverlayCommandReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP">
+            <intent-filter>
+                <action android:name="com.edgeflow.SHOW_OVERLAY" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
+            android:name=".service.FreezerUnfreezeReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP">
+            <intent-filter>
+                <action android:name="com.edgeflow.UNFREEZE_APP_SUCCEEDED" />
+            </intent-filter>
+        </receiver>
+
+        <service
+            android:name=".service.OverlayHostService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Keeps the user-enabled gesture overlay host available for EdgeFlow actions" />
+        </service>
+
+        <service
+            android:name=".service.EdgeFlowTileService"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="@string/quick_settings_tile_label"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name=".service.EdgeFlowTile2"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="EdgeFlow 2"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name=".service.EdgeFlowTile3"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="EdgeFlow 3"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name=".service.EdgeFlowTile4"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="EdgeFlow 4"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name=".service.EdgeFlowTile5"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="EdgeFlow 5"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name=".service.EdgeFlowTile6"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="EdgeFlow 6"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name=".service.EdgeFlowTile7"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="EdgeFlow 7"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name=".service.EdgeFlowTile8"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="EdgeFlow 8"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name=".service.EdgeFlowTile9"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="EdgeFlow 9"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name=".service.EdgeFlowTile10"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="EdgeFlow 10"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name=".service.EdgeFlowTile11"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="EdgeFlow 11"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name=".service.EdgeFlowTile12"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="EdgeFlow 12"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name=".service.NotificationListener"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
+        <!-- Modern Xposed module metadata. The framework reads module.prop for
+             API requirements; label and description come from resources. -->
+        <meta-data
+            android:name="xposedmodule"
+            android:value="true" />
+        <meta-data
+            android:name="xposeddescription"
+            android:resource="@string/module_description" />
+        <meta-data
+            android:name="xposedminversion"
+            android:value="93" />
+        <meta-data
+            android:name="xposedscope"
+            android:resource="@array/xposed_scope" />
+    </application>
+
+</manifest>

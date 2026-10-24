@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Launcher icon: a screen with a highlighted edge, which is what the app does.
+  Kept as a vector so it scales to every density without extra assets.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Device body -->
+    <path
+        android:fillColor="#1E293B"
+        android:pathData="M38,26 h32 a6,6 0 0 1 6,6 v44 a6,6 0 0 1 -6,6 h-32 a6,6 0 0 1 -6,-6 v-44 a6,6 0 0 1 6,-6 z" />
+
+    <!-- Screen -->
+    <path
+        android:fillColor="#0F172A"
+        android:pathData="M40,34 h28 v40 h-28 z" />
+
+    <!-- Active right edge zone -->
+    <path
+        android:fillColor="#38BDF8"
+        android:pathData="M64,38 h3 a1.5,1.5 0 0 1 1.5,1.5 v11 a1.5,1.5 0 0 1 -1.5,1.5 h-3 z" />
+    <path
+        android:fillColor="#22D3EE"
+        android:pathData="M64,54 h3 a1.5,1.5 0 0 1 1.5,1.5 v11 a1.5,1.5 0 0 1 -1.5,1.5 h-3 z" />
+
+    <!-- Gesture arrow -->
+    <path
+        android:fillColor="#E2E8F0"
+        android:pathData="M46,54 h10 v-4 l8,6 -8,6 v-4 h-10 z" />
+</vector>
