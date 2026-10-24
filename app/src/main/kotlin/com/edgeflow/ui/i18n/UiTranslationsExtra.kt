@@ -3,6 +3,33 @@ package com.edgeflow.ui.i18n
 /** Legacy pages, unlock activity and longer help messages for simplified Chinese. */
 internal object UiTranslationsExtra {
     private val labels = mapOf(
+        "Radial ring layout" to "同心圆环布局",
+        "Tap the bubble to open. Slide across a sector and release to run its task." to "点击悬浮球展开圆环，滑至目标扇区并松手即可执行任务。",
+        "Three rings" to "三层圆环",
+        "Off: two rings (12 shortcuts). On: three rings (18 shortcuts)." to "关闭为双层（12 个槽位），开启为三层（18 个槽位）。",
+        "Haptic sector feedback" to "扇区触觉反馈",
+        "Gently vibrate on changing to an assigned sector." to "滑动到已绑定的扇区时轻微振动。",
+        "Ring 1" to "第一层圆环",
+        "Ring 2" to "第二层圆环",
+        "Ring 3" to "第三层圆环",
+        "Sector 1" to "扇区 1",
+        "Sector 2" to "扇区 2",
+        "Sector 3" to "扇区 3",
+        "Sector 4" to "扇区 4",
+        "Sector 5" to "扇区 5",
+        "Sector 6" to "扇区 6",
+        "Unassigned" to "未绑定",
+        "Choose shortcut" to "选择快捷任务",
+        "Clear assignment" to "清除绑定",
+        "Leave this sector inactive" to "此扇区不执行任务",
+        "Selected" to "已选中",
+        "Empty" to "空",
+        "Expand radial shortcuts" to "展开圆环快捷菜单",
+        "Radial shortcuts. Slide and release to run." to "圆环快捷菜单，滑动至扇区并松开以执行。",
+        "Preview: inner ring first, outer ring second. Long press and slide for a continuous gesture." to
+            "实时预览：第一层在内，第二层在外；长按悬浮球后可连续滑动选择。",
+        "Optional draggable bubble with a list or radial shortcut menu. Off by default." to
+            "可拖动吸边的悬浮球，支持列表与同心圆环两种布局，默认关闭。",
         "Target framework" to "目标框架",
         "Verified on" to "已验证系统",
         "This device" to "当前设备",
@@ -53,6 +80,20 @@ internal object UiTranslationsExtra {
             "配置导入导出、恢复、紧急停止和重置",
         "Close floating widget" to "关闭悬浮小组件",
         "Record new gesture" to "录制新手势",
+        "Choose a recorded gesture or record a new one. No coordinates are needed." to
+            "选择已录制手势，或直接录制新手势。无需填写 X/Y 坐标。",
+        "After saving the gesture, it will be selected automatically." to
+            "录制并保存后会自动选中新手势。",
+        "No recorded gestures yet. Tap Record new gesture to get started." to
+            "还没有录制手势，请点击“录制新手势”开始。",
+        "Record a gesture or select an existing recording before saving." to
+            "请先录制或选择已有手势，再保存动作。",
+        "Legacy coordinate tap: choose a recording to replace it, or cancel to keep it unchanged." to
+            "这是旧版坐标点击动作。选择录制手势可替换，取消则维持原操作。",
+        "Allow display over other apps to record a gesture." to
+            "需要授予悬浮窗权限，才能录制手势。",
+        "Could not open the gesture recorder. Check the overlay permission." to
+            "无法打开手势录制器，请检查悬浮窗权限。",
         "Gesture" to "手势",
         "Draw one or two fingers across the overlay, with up to 12 consecutive strokes." to
             "在录制浮层上使用单指或双指，可连续录制最多 12 段手势。",
@@ -214,6 +255,9 @@ internal object UiTranslationsExtra {
     fun exact(value: String): String? = labels[value]
 
     fun dynamic(value: String): String? {
+        Regex("^(.+) · (\\d+) ms$").matchEntire(value)?.let {
+            return "${it.groupValues[1]} · ${it.groupValues[2]} 毫秒"
+        }
         Regex("^Recorded (\\d+) strokes · (\\d+)/20 s$").matchEntire(value)?.let {
             return "已录制 ${it.groupValues[1]} 段 · ${it.groupValues[2]}/20 秒"
         }
