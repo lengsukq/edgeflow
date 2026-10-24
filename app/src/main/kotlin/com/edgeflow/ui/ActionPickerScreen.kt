@@ -5,6 +5,8 @@ import android.appwidget.AppWidgetHost
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProviderInfo
 import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -34,6 +36,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -49,6 +52,7 @@ import com.edgeflow.ui.i18n.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
@@ -71,6 +75,7 @@ import com.edgeflow.core.ActionSpec
 import com.edgeflow.core.Edge
 import com.edgeflow.core.EdgeZone
 import com.edgeflow.core.Gesture
+import com.edgeflow.core.Ipc
 import com.edgeflow.core.HardwareKey
 import com.edgeflow.core.KeyGesture
 import com.edgeflow.core.model.Action
@@ -85,6 +90,8 @@ import com.edgeflow.core.model.SuccessiveAdjustTarget
 import com.edgeflow.core.model.ToggleMode
 import com.edgeflow.core.model.VariableOperator
 import com.edgeflow.data.ConfigRepository
+import com.edgeflow.EdgeFlowApp
+import com.edgeflow.service.OverlayHostService
 import com.edgeflow.data.setGestureAction
 import com.edgeflow.data.setKeyAction
 import com.edgeflow.data.setPieSlot
@@ -642,6 +649,46 @@ private fun ActionConfigurationDialog(
     var showEditableActionPicker by remember { mutableStateOf(false) }
     var editableActionConfigId by rememberSaveable { mutableIntStateOf(-1) }
     val context = LocalContext.current
+    val liveConfig by (context.applicationContext as EdgeFlowApp)
+        .configRepository.config.collectAsStateWithLifecycle()
+    var awaitingRecording by remember(actionId) { mutableStateOf(false) }
+    var previousRecordingIds by remember(actionId) { mutableStateOf(emptySet<String>()) }
+    var recordingError by remember(actionId) { mutableStateOf<String?>(null) }
+
+    fun launchGestureRecorder() {
+        previousRecordingIds = liveConfig.recordedGestures.mapTo(mutableSetOf()) { it.id }
+        awaitingRecording = true
+        recordingError = null
+        runCatching {
+            context.startForegroundService(
+                Intent(context, OverlayHostService::class.java)
+                    .setAction(Ipc.SHOW_OVERLAY)
+                    .putExtra(Ipc.EXTRA_OVERLAY_KIND, Ipc.KIND_GESTURE_RECORD),
+            )
+        }.onFailure {
+            awaitingRecording = false
+            recordingError = "Could not open the gesture recorder. Check the overlay permission."
+        }
+    }
+
+    val gesturePermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) {
+        if (Settings.canDrawOverlays(context)) {
+            launchGestureRecorder()
+        } else {
+            recordingError = "Allow display over other apps to record a gesture."
+        }
+    }
+    LaunchedEffect(liveConfig.recordedGestures, awaitingRecording) {
+        if (awaitingRecording) {
+            liveConfig.recordedGestures.lastOrNull { it.id !in previousRecordingIds }?.let {
+                recordedGestureId = it.id
+                awaitingRecording = false
+                recordingError = null
+            }
+        }
+    }
     val appWidgetManager = remember(context) { AppWidgetManager.getInstance(context) }
     val appWidgetHost = remember(context) {
         AppWidgetHost(context, Action.FloatingWidget.HOST_ID)
@@ -845,7 +892,7 @@ private fun ActionConfigurationDialog(
         }
         ActionId.INJECT_GESTURE -> {
             if (recordedGestureId.isNotBlank()) {
-                if (config.recordedGestures.any { it.id == recordedGestureId }) {
+                if (liveConfig.recordedGestures.any { it.id == recordedGestureId }) {
                     Action.ReplayGesture(
                         recordedGestureId,
                         speedPercent = recordedGestureSpeed,
@@ -854,11 +901,7 @@ private fun ActionConfigurationDialog(
                         anchorYPercent = gestureAnchorY,
                     )
                 } else null
-            } else {
-                val x = firstValue.toIntOrNull()
-                val y = secondValue.toIntOrNull()
-                if (x != null && y != null && x >= 0 && y >= 0) Action.InjectTap(x, y) else null
-            }
+            } else (existingAction as? Action.InjectTap)
         }
         ActionId.PIE -> Action.ShowPie(edgeIndex)
         ActionId.SIDE_BAR -> Action.ShowSideBar(edgeIndex)
@@ -1062,16 +1105,41 @@ private fun ActionConfigurationDialog(
                         ConfigField(secondValue, { secondValue = it }, "Meta state (optional, default 0)", numeric = true)
                     }
                     ActionId.INJECT_GESTURE -> {
-                        Text("Select a recorded stroke, or use manual coordinates for a single tap.")
-                        config.recordedGestures.forEach { record ->
+                        Text("Choose a recorded gesture or record a new one. No coordinates are needed.")
+                        Button(onClick = {
+                            if (Settings.canDrawOverlays(context)) {
+                                launchGestureRecorder()
+                            } else {
+                                gesturePermissionLauncher.launch(
+                                    Intent(
+                                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                        Uri.parse("package:${context.packageName}"),
+                                    ),
+                                )
+                            }
+                        }) {
+                            Text("Record new gesture")
+                        }
+                        if (awaitingRecording) {
+                            Text("After saving the gesture, it will be selected automatically.",
+                                style = MaterialTheme.typography.bodySmall)
+                        }
+                        recordingError?.let {
+                            Text(it, color = MaterialTheme.colorScheme.error)
+                        }
+                        if (liveConfig.recordedGestures.isEmpty()) {
+                            Text("No recorded gestures yet. Tap Record new gesture to get started.")
+                        }
+                        liveConfig.recordedGestures.forEach { record ->
                             FilterChip(
                                 selected = recordedGestureId == record.id,
                                 onClick = { recordedGestureId = record.id },
-                                label = { Text(record.name) },
+                                label = {
+                                    Text("${record.name} · ${com.edgeflow.core.GestureTracePolicy.duration(record)} ms")
+                                },
                             )
                         }
                         if (recordedGestureId.isNotBlank()) {
-                            TextButton(onClick = { recordedGestureId = "" }) { Text("Use manual tap") }
                             Text("Playback speed: ${recordedGestureSpeed}%")
                             Slider(
                                 value = recordedGestureSpeed.toFloat(),
@@ -1102,9 +1170,9 @@ private fun ActionConfigurationDialog(
                                 Slider(gestureAnchorY.toFloat(), { gestureAnchorY = it.toInt() },
                                     valueRange = 0f..100f)
                             }
-                        } else {
-                            ConfigField(firstValue, { firstValue = it }, "X coordinate", numeric = true)
-                            ConfigField(secondValue, { secondValue = it }, "Y coordinate", numeric = true)
+                        } else if (existingAction is Action.InjectTap) {
+                            Text("Legacy coordinate tap: choose a recording to replace it, or cancel to keep it unchanged.",
+                                style = MaterialTheme.typography.bodySmall)
                         }
                     }
                     ActionId.PIE, ActionId.SIDE_BAR, ActionId.SHORTCUTS_PANEL -> {
@@ -1364,7 +1432,7 @@ private fun ActionConfigurationDialog(
                 }
                 if (builtAction == null) {
                     val explanation = when (actionId) {
-                        ActionId.INJECT_GESTURE -> "Select a saved recording, or enter non-negative X and Y coordinates."
+                        ActionId.INJECT_GESTURE -> "Record a gesture or select an existing recording before saving."
                         ActionId.INJECT_KEY_EVENT, ActionId.INJECT_KEY_EVENT_ALT ->
                             "Enter a non-negative Android key code and optional meta-state."
                         ActionId.REPEAT -> "Enter a valid repeat count and add at least one action."
