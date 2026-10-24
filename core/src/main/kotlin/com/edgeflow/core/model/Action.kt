@@ -111,6 +111,11 @@ sealed interface Action {
     data class ReplayGesture(
         val recordingId: String,
         override val id: Int = ActionId.INJECT_GESTURE,
+        /** 100 = original speed. Range 25..300, persisted with legacy-safe default. */
+        val speedPercent: Int = 100,
+        val placement: GesturePlacement = GesturePlacement.ORIGINAL,
+        val anchorXPercent: Int = 50,
+        val anchorYPercent: Int = 50,
     ) : Action
 
     /** Show a transient message. */

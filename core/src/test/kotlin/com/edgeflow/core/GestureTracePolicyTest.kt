@@ -46,7 +46,7 @@ class GestureTracePolicyTest {
         assertEquals(5000, first.first().x)
         assertEquals(2500, first.first().y)
         assertEquals(first, GestureTracePolicy.addSample(first, Float.NaN, 2f, 400, 400, 1L))
-        assertEquals(first, GestureTracePolicy.addSample(first, 2f, 2f, 400, 400, 9_000L))
+        assertEquals(first, GestureTracePolicy.addSample(first, 2f, 2f, 400, 400, 21_000L))
         assertEquals(400f, GestureTracePolicy.px(10000, 400))
     }
 
