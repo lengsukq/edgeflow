@@ -24,6 +24,9 @@ import com.edgeflow.core.UnlockSnapshot
 import com.edgeflow.core.UnlockDecision
 import com.edgeflow.core.GameModePolicy
 import com.edgeflow.core.GestureTracePolicy
+import com.edgeflow.core.GestureEventPhase
+import com.edgeflow.core.GesturePlaybackPlan
+import com.edgeflow.core.GesturePlaybackEvent
 import com.edgeflow.core.ImmersivePolicy
 import com.edgeflow.core.model.Action
 import com.edgeflow.core.model.AppSettings
@@ -122,55 +125,72 @@ internal class ActionExecutor(
             reportUnsupported(ActionId.INJECT_GESTURE, "native input injection is not connected")
             return
         }
-        // The recording is normalized to physical display dimensions. System
-        // resource metrics can be stale or sized to a non-default viewport.
+        if (action.speedPercent !in GesturePlaybackPlan.MIN_SPEED..GesturePlaybackPlan.MAX_SPEED) {
+            reportUnsupported(ActionId.INJECT_GESTURE, "gesture playback speed is invalid")
+            return
+        }
+        val rotation = context?.getSystemService(android.hardware.display.DisplayManager::class.java)
+            ?.getDisplay(android.view.Display.DEFAULT_DISPLAY)?.rotation ?: 0
+        val delta = if (record.sourceRotation == -1) 0 else
+            Math.floorMod(rotation - record.sourceRotation, 4)
+        val frames = runCatching {
+            GesturePlaybackPlan.create(
+                record, action.speedPercent, action.placement, delta,
+                action.anchorXPercent, action.anchorYPercent,
+            )
+        }.getOrElse {
+            reportUnsupported(ActionId.INJECT_GESTURE, "cannot plan gesture playback")
+            return
+        }
         val geometry = context?.let {
             com.edgeflow.hook.gesture.EdgeGeometryFactory.fromDisplay(it, repository.config.settings)
         } ?: com.edgeflow.hook.gesture.EdgeGeometryFactory.fromSystem(repository.config.settings)
-        val points = record.points
         val start = SystemClock.uptimeMillis()
-        var lastX = 0f
-        var lastY = 0f
-        var downSent = false
-        var playbackSucceeded = true
+        var strokeDownTime = start
+        var active: GesturePlaybackEvent? = null
+        var interrupted = false
         try {
-            for ((index, point) in points.withIndex()) {
-                if (!actionRunActive()) break
-                val due = start + point.elapsedMs
-                // Preserve long gaps between samples. A single capped sleep
-                // compresses slow strokes and changes the gesture semantics.
+            for (frame in frames) {
+                if (!actionRunActive()) { interrupted = true; break }
+                val due = start + frame.elapsedMs
                 while (actionRunActive()) {
                     val remaining = due - SystemClock.uptimeMillis()
                     if (remaining <= 0) break
-                    SystemClock.sleep(remaining.coerceAtMost(50L))
+                    SystemClock.sleep(remaining.coerceAtMost(16L))
                 }
-                if (!actionRunActive()) break
-                lastX = GestureTracePolicy.px(point.x, geometry.screenWidth)
-                lastY = GestureTracePolicy.px(point.y, geometry.screenHeight)
-                val event = SyntheticEvents.touch(
-                    start,
-                    SystemClock.uptimeMillis(),
-                    if (index == 0) android.view.MotionEvent.ACTION_DOWN
-                    else android.view.MotionEvent.ACTION_MOVE,
-                    lastX, lastY,
+                if (!actionRunActive()) { interrupted = true; break }
+                if (frame.phase == GestureEventPhase.DOWN) {
+                    strokeDownTime = SystemClock.uptimeMillis()
+                }
+                val event = SyntheticEvents.touchFrame(
+                    frame, strokeDownTime, SystemClock.uptimeMillis(),
+                    geometry.screenWidth, geometry.screenHeight,
                 )
                 if (!injectInputEvent(event)) {
-                    XLog.w("recorded gesture injection was rejected")
-                    playbackSucceeded = false
+                    interrupted = true
                     break
                 }
-                if (index == 0) downSent = true
+                active = when (frame.phase) {
+                    GestureEventPhase.UP -> null
+                    GestureEventPhase.POINTER_UP -> frame.copy(
+                        phase = GestureEventPhase.MOVE,
+                        pointers = frame.pointers.filterIndexed { index, _ -> index != frame.changedIndex },
+                    )
+                    else -> frame
+                }
             }
         } finally {
-            if (downSent) {
-                val end = SyntheticEvents.touch(
-                    start, SystemClock.uptimeMillis(),
-                    if (!actionRunActive() || !playbackSucceeded) android.view.MotionEvent.ACTION_CANCEL
-                    else android.view.MotionEvent.ACTION_UP,
-                    lastX, lastY,
-                )
-                injectInputEvent(end)
+            // On Stop All, rejection or exception, release ALL live pointers.
+            // Never leave the dispatcher believing a synthetic finger is held.
+            active?.takeIf { it.pointers.isNotEmpty() }?.let { last ->
+                injectInputEvent(SyntheticEvents.touchFrame(
+                    last, strokeDownTime, SystemClock.uptimeMillis(),
+                    geometry.screenWidth, geometry.screenHeight, cancel = true,
+                ))
             }
+        }
+        if (interrupted && actionRunActive()) {
+            reportUnsupported(ActionId.INJECT_GESTURE, "gesture replay stopped before completion")
         }
     }
 

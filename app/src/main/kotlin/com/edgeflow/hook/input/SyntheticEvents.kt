@@ -5,6 +5,8 @@ import android.view.InputEvent
 import android.view.KeyEvent
 import android.view.MotionEvent
 import com.edgeflow.hook.util.Reflect
+import com.edgeflow.core.GestureEventPhase
+import com.edgeflow.core.GesturePlaybackEvent
 
 /**
  * Builds the events the module synthesises.
@@ -56,6 +58,45 @@ internal object SyntheticEvents {
             0,      // edgeFlags
             SOURCE_TOUCHSCREEN,
             0,      // flags
+        )
+    }
+
+    /** Correct pointer-index bits and current pointer arrays for two-finger playback. */
+    fun touchFrame(
+        frame: GesturePlaybackEvent,
+        downTime: Long,
+        eventTime: Long,
+        width: Int,
+        height: Int,
+        cancel: Boolean = false,
+    ): MotionEvent {
+        val props = frame.pointers.map { point ->
+            MotionEvent.PointerProperties().apply {
+                id = point.id
+                toolType = MotionEvent.TOOL_TYPE_FINGER
+            }
+        }.toTypedArray()
+        val coords = frame.pointers.map { point ->
+            MotionEvent.PointerCoords().apply {
+                x = point.x / 10000f * width.coerceAtLeast(1)
+                y = point.y / 10000f * height.coerceAtLeast(1)
+                pressure = 1f
+                size = 1f
+            }
+        }.toTypedArray()
+        val action = if (cancel) MotionEvent.ACTION_CANCEL else when (frame.phase) {
+            GestureEventPhase.DOWN -> MotionEvent.ACTION_DOWN
+            GestureEventPhase.UP -> MotionEvent.ACTION_UP
+            GestureEventPhase.MOVE -> MotionEvent.ACTION_MOVE
+            GestureEventPhase.POINTER_DOWN -> MotionEvent.ACTION_POINTER_DOWN or
+                (frame.changedIndex shl MotionEvent.ACTION_POINTER_INDEX_SHIFT)
+            GestureEventPhase.POINTER_UP -> MotionEvent.ACTION_POINTER_UP or
+                (frame.changedIndex shl MotionEvent.ACTION_POINTER_INDEX_SHIFT)
+        }
+        return MotionEvent.obtain(
+            downTime, eventTime.coerceAtLeast(downTime), action,
+            props.size, props, coords, 0, 0, 1f, 1f, 0, 0,
+            SOURCE_TOUCHSCREEN, 0,
         )
     }
 

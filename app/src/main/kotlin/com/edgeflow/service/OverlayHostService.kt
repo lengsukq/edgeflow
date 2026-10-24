@@ -51,6 +51,7 @@ import kotlinx.coroutines.flow.collect
 import com.edgeflow.core.model.Action
 import com.edgeflow.core.model.RecordedGesture
 import com.edgeflow.core.model.GestureTracePoint
+import com.edgeflow.core.model.GestureStroke
 import com.edgeflow.core.model.AppSettings
 import com.edgeflow.core.model.PanelConfig
 import com.edgeflow.hook.GesturePointerGeometry
@@ -141,14 +142,15 @@ class OverlayHostService : Service() {
         val view = GestureRecordingOverlayView(
             this,
             onClose = ::removeOverlay,
-            onSave = { rawPoints ->
-                val record = RecordedGesture(
-                    id = UUID.randomUUID().toString(),
-                    name = "Gesture " + ((application as EdgeFlowApp).configRepository.current.recordedGestures.size + 1),
-                    points = rawPoints,
+            onSave = { draft ->
+                val record = draft.copy(
+                    name = com.edgeflow.ui.i18n.UiTranslations.forContext(this, "Gesture") + " " +
+                        ((application as EdgeFlowApp).configRepository.current.recordedGestures.size + 1),
                 )
                 if (!GestureTracePolicy.valid(record)) {
-                    Toast.makeText(this, "Draw one stroke first (max 8 seconds)", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this, com.edgeflow.ui.i18n.UiTranslations.forContext(
+                        this, "Gesture must finish within 20 seconds (max 2 fingers)"),
+                        Toast.LENGTH_LONG).show()
                     return@GestureRecordingOverlayView
                 }
                 runCatching {
@@ -156,7 +158,8 @@ class OverlayHostService : Service() {
                         GestureTracePolicy.append(config, record)
                     }
                 }.onSuccess {
-                    Toast.makeText(this, "Gesture saved. Bind it via Inject Gesture.", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this, com.edgeflow.ui.i18n.UiTranslations.forContext(
+                        this, "Gesture saved. Bind it via Inject Gesture."), Toast.LENGTH_LONG).show()
                     removeOverlay()
                 }.onFailure {
                     Toast.makeText(this, it.message ?: "Could not save gesture", Toast.LENGTH_LONG).show()
@@ -1298,39 +1301,73 @@ private data class ActivityEntry(val className: String, val label: String)
 private class GestureRecordingOverlayView(
     context: Context,
     onClose: () -> Unit,
-    onSave: (List<GestureTracePoint>) -> Unit,
+    onSave: (RecordedGesture) -> Unit,
 ) : FrameLayout(context) {
-    private val drawing = GestureCaptureView(context)
+    private val status = TextView(context).apply {
+        text = com.edgeflow.ui.i18n.UiTranslations.forContext(context, "Draw a gesture · 0/20 s")
+        textSize = 13f
+        gravity = Gravity.CENTER
+        setTextColor(0xFFFFFFFF.toInt())
+        setPadding(18, 14, 18, 14)
+        setBackgroundColor(0xBB171D26.toInt())
+    }
+    private val drawing = GestureCaptureView(context) { text ->
+        status.text = com.edgeflow.ui.i18n.UiTranslations.forContext(context, text)
+    }
 
     init {
-        setBackgroundColor(0xCC101820.toInt())
+        // Keep the target application visible while capturing, but consume touches.
+        setBackgroundColor(0x33101820.toInt())
         addView(drawing, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         val toolbar = LinearLayout(context).apply {
             setPadding(18, 16, 18, 16)
             setBackgroundColor(0xFF242B34.toInt())
         }
         fun button(text: String, action: () -> Unit) = TextView(context).apply {
-            this.text = text
+            this.text = com.edgeflow.ui.i18n.UiTranslations.forContext(context, text)
             textSize = 16f
             setTextColor(0xFFFFFFFF.toInt())
-            setPadding(20, 14, 20, 14)
+            val density = resources.displayMetrics.density
+            setPadding((12 * density).toInt(), (10 * density).toInt(),
+                (12 * density).toInt(), (10 * density).toInt())
             setOnClickListener { action() }
         }
         toolbar.addView(button("Clear") { drawing.clear() })
-        toolbar.addView(button("Save stroke") { onSave(drawing.currentPoints()) })
+        toolbar.addView(button("Save gesture") {
+            drawing.currentRecording()?.let(onSave)
+                ?: Toast.makeText(context, com.edgeflow.ui.i18n.UiTranslations.forContext(
+                    context, drawing.errorMessage()), Toast.LENGTH_LONG).show()
+        })
         toolbar.addView(button("Close", onClose))
         addView(toolbar, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT,
             Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin = 36 })
+        addView(status, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT,
+            Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
+                bottomMargin = (24 * resources.displayMetrics.density).toInt()
+            })
     }
 }
 
-private class GestureCaptureView(context: Context) : View(context) {
+private class GestureCaptureView(
+    context: Context,
+    private val onStatus: (String) -> Unit,
+) : View(context) {
     /** Actual display pixels, not the overlay's size (which may exclude insets). */
     private var displayGeometry = EdgeGeometryFactory.fromDisplay(context, AppSettings())
-    private var samples: List<GestureTracePoint> = emptyList()
+    private val captured = mutableListOf<GestureStroke>()
+    private data class InProgress(
+        val id: Int,
+        val start: Long,
+        var points: List<GestureTracePoint>,
+    )
+    private val active = linkedMapOf<Int, InProgress>()
     private var startMs = 0L
-    private var completed = false
-    private val path = android.graphics.Path()
+    private var recordingRotation = -1
+    private var invalidReason: String? = null
+    private var lastProgressUpdate = 0L
+    private val paths = mutableListOf<android.graphics.Path>()
+    private val drawn = mutableMapOf<Int, android.graphics.Path>()
+    private val location = IntArray(2)
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = 0xFF03A9F4.toInt()
         style = Paint.Style.STROKE
@@ -1339,53 +1376,133 @@ private class GestureCaptureView(context: Context) : View(context) {
         strokeJoin = Paint.Join.ROUND
     }
 
-    fun currentPoints(): List<GestureTracePoint> = if (completed) samples.toList() else emptyList()
+    fun currentRecording(): RecordedGesture? {
+        if (invalidReason != null || active.isNotEmpty() || captured.isEmpty()) return null
+        val strokes = captured.toList()
+        val record = RecordedGesture(
+            id = UUID.randomUUID().toString(),
+            name = "Gesture",
+            points = strokes.first().points,
+            strokes = strokes,
+            sourceWidth = displayGeometry.screenWidth,
+            sourceHeight = displayGeometry.screenHeight,
+            sourceRotation = recordingRotation,
+        )
+        return record.takeIf(GestureTracePolicy::valid)
+    }
+
+    fun errorMessage(): String = invalidReason ?:
+        "Finish at least one stroke before saving (maximum 20 seconds, two fingers)."
 
     fun clear() {
-        samples = emptyList()
-        completed = false
-        path.reset()
+        captured.clear()
+        active.clear()
+        paths.clear()
+        drawn.clear()
+        startMs = 0L
+        recordingRotation = -1
+        invalidReason = null
+        lastProgressUpdate = 0L
+        onStatus("Draw a gesture · 0/20 s")
         invalidate()
     }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        canvas.drawPath(path, paint)
+        paths.forEach { canvas.drawPath(it, paint) }
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        val currentRotation = context.getSystemService(android.hardware.display.DisplayManager::class.java)
+            ?.getDisplay(android.view.Display.DEFAULT_DISPLAY)?.rotation ?: -1
+        if (recordingRotation != -1 && currentRotation != -1 &&
+            currentRotation != recordingRotation && startMs > 0
+        ) invalidReason = "Screen rotated during recording. Clear and retry."
+        fun position(index: Int): Pair<Float, Float> {
+            getLocationOnScreen(location)
+            return (location[0] + event.getX(index)) to (location[1] + event.getY(index))
+        }
+        fun sample(index: Int, eventTime: Long) {
+            val id = event.getPointerId(index)
+            val pointer = active[id] ?: return
+            val elapsed = (eventTime - pointer.start).coerceAtLeast(0)
+            if (eventTime - startMs > GestureTracePolicy.MAX_LENGTH_MS) {
+                invalidReason = "Recording exceeded 20 seconds. Clear and retry."
+                return
+            }
+            val (x, y) = position(index)
+            pointer.points = GestureTracePolicy.addSample(
+                pointer.points, x, y, displayGeometry.screenWidth,
+                displayGeometry.screenHeight, elapsed,
+            )
+            drawn[id]?.lineTo(event.getX(index), event.getY(index))
+        }
+        fun finish(index: Int) {
+            val id = event.getPointerId(index)
+            val pointer = active[id] ?: return
+            sample(index, maxOf(pointer.start + 1, event.eventTime))
+            if (pointer.points.size < 2) {
+                invalidReason = "Gesture stroke has too few points."
+            } else {
+                captured += GestureStroke(
+                    id,
+                    (pointer.start - startMs).toInt(),
+                    pointer.points,
+                )
+            }
+            active.remove(id)
+            drawn.remove(id)
+        }
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                clear()
+                if (captured.isEmpty() && active.isEmpty()) clear()
                 displayGeometry = EdgeGeometryFactory.fromDisplay(context, AppSettings())
-                startMs = event.eventTime
-                samples = GestureTracePolicy.addSample(
-                    emptyList(), event.rawX, event.rawY,
-                    displayGeometry.screenWidth, displayGeometry.screenHeight, 0,
-                )
-                path.moveTo(event.x, event.y)
+                if (startMs == 0L) startMs = event.eventTime
+                if (recordingRotation == -1) recordingRotation = currentRotation
+                if (captured.size >= GestureTracePolicy.MAX_STROKES) {
+                    invalidReason = "Maximum of 12 strokes reached."
+                } else {
+                    val id = event.getPointerId(0)
+                    active[id] = InProgress(id, event.eventTime, emptyList())
+                    paths += android.graphics.Path().apply { moveTo(event.x, event.y) }
+                    drawn[id] = paths.last()
+                    sample(0, event.eventTime)
+                }
+            }
+            MotionEvent.ACTION_POINTER_DOWN -> {
+                if (active.size >= GestureTracePolicy.MAX_SIMULTANEOUS_POINTERS ||
+                    captured.size + active.size >= GestureTracePolicy.MAX_STROKES
+                ) {
+                    invalidReason = "Maximum two fingers and 12 strokes."
+                } else {
+                    val index = event.actionIndex
+                    val id = event.getPointerId(index)
+                    active[id] = InProgress(id, event.eventTime, emptyList())
+                    paths += android.graphics.Path().apply { moveTo(event.getX(index), event.getY(index)) }
+                    drawn[id] = paths.last()
+                    sample(index, event.eventTime)
+                }
             }
             MotionEvent.ACTION_MOVE -> {
-                if (samples.isEmpty()) return true
-                samples = GestureTracePolicy.addSample(
-                    samples, event.rawX, event.rawY,
-                    displayGeometry.screenWidth, displayGeometry.screenHeight,
-                    event.eventTime - startMs,
-                )
-                path.lineTo(event.x, event.y)
+                for (index in 0 until event.pointerCount) sample(index, event.eventTime)
             }
-            MotionEvent.ACTION_UP -> {
-                if (samples.isEmpty()) return true
-                samples = GestureTracePolicy.addSample(
-                    samples, event.rawX, event.rawY,
-                    displayGeometry.screenWidth, displayGeometry.screenHeight,
-                    event.eventTime - startMs,
-                )
-                completed = true
-                path.lineTo(event.x, event.y)
+            MotionEvent.ACTION_POINTER_UP, MotionEvent.ACTION_UP -> finish(event.actionIndex)
+            MotionEvent.ACTION_CANCEL -> {
+                invalidReason = "Recording was interrupted; clear and retry."
+                active.clear()
+                drawn.clear()
             }
-            MotionEvent.ACTION_CANCEL, MotionEvent.ACTION_POINTER_DOWN -> clear()
             else -> return false
+        }
+        if (invalidReason != null) {
+            onStatus(invalidReason!!)
+        } else if (event.eventTime - lastProgressUpdate >= 120L ||
+            event.actionMasked == MotionEvent.ACTION_UP
+        ) {
+            lastProgressUpdate = event.eventTime
+            val elapsed = if (startMs == 0L) 0L else
+                (event.eventTime - startMs).coerceAtLeast(0)
+            onStatus("Recorded ${captured.size + active.size} strokes · ${elapsed / 1000}/20 s")
         }
         invalidate()
         return true
